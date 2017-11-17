@@ -141,7 +141,6 @@ let devisMongoClient = require("devis")
         .plug("devis-mongo-client")
 let promise = new Promise((resolve, reject) => {
         //connect to the database
-        let promise = new Promise((resolve, reject) => {
     devis.call({
         role: "mongodb",
         action: "connect"
