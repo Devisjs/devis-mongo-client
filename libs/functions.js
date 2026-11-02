@@ -1,261 +1,101 @@
 "use strict";
 
-const mongoClient = require("mongodb").MongoClient;
+const { MongoClient } = require("mongodb");
 let database;
 
-function connect(args, done) {
-    mongoClient.connect(args.url, (err, db) => {
-        database = db;
-        done(err, db);
-    });
-}
-
-function find(args, done) {
-    if (args.type === undefined) args.type = "many";
-    let col;
+// Runs an operation on args.db (or the last connected database), then closes it unless args.close is false.
+function run(args, done, operations) {
     if (args.db === undefined) {
         args.db = database;
-        col = database.collection(args.collection);
     }
-    else {
-        col = args.db.collection(args.collection);
+    const operation = operations[args.type];
+    if (operation === undefined) {
+        return done("unknown type " + args.type, null);
     }
-
-    let options = [
-        {
-            type: "one", function: () => {
-                col.findOne(args.query, args.options, (err, result) => {
-                    done(err, result);
-                });
-            }
-        },
-        {
-            type: "many", function: () => {
-                col.find(args.query, args.options).toArray((err, items) => {
-                    done(err, items);
-                });
-            }
-        }
-    ];
-    options.forEach((obj) => {
-        if (obj.type === args.type) {
-            obj.function();
+    let result;
+    operation(args.db, args.collection && args.db.collection(args.collection))
+        .then((res) => {
+            result = res;
             if (args.close === undefined || args.close === true) {
-                args.db.close();
+                return args.db.client.close();
             }
-        }
-    });
+        })
+        .then(() => done(null, result), (err) => done(err, null));
+}
+
+function connect(args, done) {
+    const client = new MongoClient(args.url);
+    client.connect()
+        .then(() => {
+            database = client.db();
+            done(null, database);
+        })
+        .catch((err) => done(err, null));
 }
 
 function close(args, done) {
     if (args.db === undefined) {
         args.db = database;
     }
-    try {
-        args.db.close();
-        done(null, "end connection");
-    }
-    catch (e) {
-        done(e, null);
-    }
+    args.db.client.close()
+        .then(() => done(null, "end connection"))
+        .catch((err) => done(err, null));
+}
+
+function find(args, done) {
+    if (args.type === undefined) args.type = "many";
+    run(args, done, {
+        one: (db, col) => col.findOne(args.query, args.options),
+        many: (db, col) => col.find(args.query, args.options).toArray()
+    });
 }
 
 function index(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    let options = [
-        {
-            type: "ensureIndex", function: () => {
-                col.ensureIndex(args.indexFields, args.params, (err, indexName) => {
-                    done(err, indexName);
-                });
-            }
-        },
-        {
-            type: "createIndex", function: () => {
-                col.createIndex(args.indexFields, args.params, (err, indexName) => {
-                    done(err, indexName);
-                });
-            }
-        },
-        {
-            type: "ifExist", function: () => {
-                col.indexExists(args.index, (err, booleanResult) => {
-                    done(err, booleanResult);
-                });
-            }
-        },
-        {
-            type: "getAllIndexes", function: () => {
-                col.indexes((err, indexes) => {
-                    done(err, indexes);
-                });
-            }
-        }
-    ];
-    options.forEach((obj) => {
-        if (obj.type === args.type) {
-            obj.function();
-            if (args.close === undefined || args.close === true) {
-                args.db.close();
-            }
-        }
+    run(args, done, {
+        // ensureIndex was removed from the driver; it was an alias of createIndex.
+        ensureIndex: (db, col) => col.createIndex(args.indexFields, args.params),
+        createIndex: (db, col) => col.createIndex(args.indexFields, args.params),
+        ifExist: (db, col) => col.indexExists(args.index),
+        getAllIndexes: (db, col) => col.indexes()
     });
 }
 
 function insert(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    if (args.type === "one") {
-        col.insertOne(args.data, args.params, (err, res) => {
-            done(err, res);
-            if (args.close === undefined || args.close === true) {
-                args.db.close();
-            }
-        });
-    }
-    else if (args.type === "many") {
-        col.insertMany(args.data, args.params, (err, res) => {
-            done(err, res);
-            if (args.close === undefined || args.close === true) {
-                args.db.close();
-            }
-        })
-    }
+    run(args, done, {
+        one: (db, col) => col.insertOne(args.data, args.params),
+        many: (db, col) => col.insertMany(args.data, args.params)
+    });
 }
 
 function del(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    let options = [
-        {
-            type: "one", function: () => {
-                col.deleteOne(args.query, (err, result) => {
-                    done(err, result);
-                });
-            }
-        },
-        {
-            type: "many", function: () => {
-                col.deleteMany(args.query).toArray((err, items) => {
-                    done(err, items);
-                });
-            }
-        }
-    ];
-    options.forEach((obj) => {
-        if (obj.type === args.type) {
-            obj.function();
-            if (args.close === undefined || args.close === true) {
-                args.db.close();
-            }
-        }
+    run(args, done, {
+        one: (db, col) => col.deleteOne(args.query),
+        many: (db, col) => col.deleteMany(args.query)
     });
 }
 
 function update(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    let options = [
-        {
-            type: "one", function: () => {
-                col.updateOne(args.query, args.data, (err, result) => {
-                    done(err, result);
-                });
-            }
-        },
-        {
-            type: "many", function: () => {
-                col.updateMany(args.query, args.data, (err, items) => {
-                    done(err, items);
-                });
-            }
-        }
-    ];
-    options.forEach((obj) => {
-        if (obj.type === args.type) {
-            obj.function();
-            if (args.close === undefined || args.close === true) {
-                args.db.close();
-            }
-        }
+    run(args, done, {
+        one: (db, col) => col.updateOne(args.query, args.data),
+        many: (db, col) => col.updateMany(args.query, args.data)
     });
 }
 
 function createCollection(args, done) {
-    if (args.db === undefined) {
-        args.db = database;
-    }
-
-    db.createCollection(args.collection, (err, res) => {
-        done(err, res);
-        if (args.close === undefined || args.close === true) {
-            args.db.close();
-        }
+    run(Object.assign(args, { type: "create" }), done, {
+        create: (db) => db.createCollection(args.collection)
     });
 }
 
 function dropCollection(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    col.drop((err, res) => {
-        done(err, res);
-        if (args.close === undefined || args.close === true) {
-            args.db.close();
-        }
+    run(Object.assign(args, { type: "drop" }), done, {
+        drop: (db, col) => col.drop()
     });
 }
 
 function aggregate(args, done) {
-    let col;
-    if (args.db === undefined) {
-        args.db = database;
-        col = database.collection(args.collection);
-    }
-    else {
-        col = args.db.collection(args.collection);
-    }
-
-    col.aggregate(args.aggQuery, (err, result)=>{
-        done(err, result);
-        if (args.close === undefined || args.close === true) {
-            args.db.close();
-        }
+    run(Object.assign(args, { type: "aggregate" }), done, {
+        aggregate: (db, col) => col.aggregate(args.aggQuery).toArray()
     });
 }
 

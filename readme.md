@@ -3,12 +3,17 @@
 
 >A data storage plugin for Devisjs
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/devis-mongo-client"><img src="https://img.shields.io/npm/v/devis-mongo-client.svg" alt="Version"></a>
+  <a href="https://github.com/Devisjs/devis-mongo-client/actions/workflows/ci.yml"><img src="https://github.com/Devisjs/devis-mongo-client/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
 This module supports the majority of necessary features for using your MongoDB database.
 
 
 ## Install
 
-We should install Devis and the plugin :
+Node.js 22 or later is required. Devis is a peer dependency, so install both:
 
 ```bash
 $ npm install --save devis
@@ -52,11 +57,11 @@ $ npm install --save devis-mongo-client
         * Example 1 : 
         ```javascript
         //close is true by default, but if you don't wanan close the connection you should give false as argument 
-        .call({role:"mongodb",action:"find"},{collection:"foo", type : "one", params:{"Acronym" : "L"},close:false},callback);
+        .call({role:"mongodb",action:"find"},{collection:"foo", type : "one", query:{"Acronym" : "L"},close:false},callback);
         ``` 
         * Example 2 : 
         ```javascript
-        call({ role: "mongodb", action: "find" }, { type: "many", collection: "foo",query:{Name:"3"}, options: { fields: { "Acronym": 0, _id: 0 } } },callback);
+        call({ role: "mongodb", action: "find" }, { type: "many", collection: "foo",query:{Name:"3"}, options: { projection: { "Acronym": 0, _id: 0 } } },callback);
         ```
 * Indexes :
     * Create Index : 
@@ -64,7 +69,7 @@ $ npm install --save devis-mongo-client
         ```javascript
         .call({role:"mongodb", action:"index"},{collection:collection, type:type, indexFields: indexFields, params: params},callback);
         ```
-        *type* : ensureIndex or createIndex.
+        *type* : createIndex (ensureIndex is kept as an alias).
     * check index if exist : 
         * Syntax :
         ```javascript
@@ -77,7 +82,7 @@ $ npm install --save devis-mongo-client
         ```
     * Example :
     ```javascript
-    .call({role:"mongodb",action:"index"},{collection:"foo", type:"ifExist",index:["_id_","Acronym_1"],callback);
+    .call({role:"mongodb",action:"index"},{collection:"foo", type:"ifExist",index:["_id_","Acronym_1"]},callback);
     ```
 * Insert data :
     * Syntax :
@@ -100,14 +105,14 @@ $ npm install --save devis-mongo-client
     *type* : one or many.
     * Example :
     ```javascript
-    .call({role:"mongodb",action:"delete"},{type:"deleteOne", collection:"foo",params:{Value: "1"}},,callback);
+    .call({role:"mongodb",action:"delete"},{type:"one", collection:"foo",query:{Value: "1"}},callback);
     ```
 * Update data :
     * Syntax :
     ```javascript
     .call({role:"mongodb", action:"update"},{collection:collection, type:type, query: query, data: data},callback);
     ```
-    *type* : one or many.
+    *type* : one or many. `data` must use update operators such as `$set`.
     * Example :
     ```javascript
     let queryOr={
@@ -135,13 +140,13 @@ $ npm install --save devis-mongo-client
 ## Example : 
 ```javascript
 //Initialize a Devis instance
-let devisMongoClient = require("devis")
+const devisMongoClient = require("devis")
 
 //use the devis-mongo-client plugin
         .plug("devis-mongo-client")
 let promise = new Promise((resolve, reject) => {
         //connect to the database
-    devis.call({
+    devisMongoClient.call({
         role: "mongodb",
         action: "connect"
     }, {
@@ -162,7 +167,7 @@ promise.then((res) => {
 		action: "find"
 	    }, {
 		collection: "foo",
-		params: {
+		query: {
 		    "Acronym": "L"
 		}
 	    }, (err, result) => {
@@ -171,6 +176,19 @@ promise.then((res) => {
 		} else {
 		    console.log(result);
 		}
-	}
+	});
 });
 ```
+
+## Closing connections
+
+Every action except `connect` closes the connection when it is done, unless `close: false` is passed. Pass `close: false` to chain several actions on one connection, then call `close`.
+
+An unknown `type` is reported to the callback as an error.
+
+## Upgrading from 1.x
+
+* Node.js 22 or later and Devis 3 are required. Devis is now a peer dependency.
+* The plugin uses the MongoDB driver 7. Results are the driver's own: for example `insert` returns `{ acknowledged, insertedId }` and `update` returns `{ matchedCount, modifiedCount }`.
+* `connect` URLs must include the database name, for example `mongodb://localhost:27017/foo`.
+* Fixed: `find`, `index`, `update` and `delete` closed the connection before the query answered; `delete` with `type: "many"` and `createCollection` always failed.
