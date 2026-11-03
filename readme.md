@@ -137,48 +137,24 @@ $ npm install --save devis-mongo-client
         }];
     .call({ role: "mongodb", action: "aggregate" }, { collection: "Production",aggQuery:aggQuery },callback);
     ```
-## Example : 
+## Example
+
+With Devis 4, `call` returns a Promise when no callback is given:
+
 ```javascript
-//Initialize a Devis instance
-const devisMongoClient = require("devis")
+const devis = require("devis").plug("devis-mongo-client");
 
-//use the devis-mongo-client plugin
-        .plug("devis-mongo-client")
-let promise = new Promise((resolve, reject) => {
-        //connect to the database
-    devisMongoClient.call({
-        role: "mongodb",
-        action: "connect"
-    }, {
-        url: "mongodb://localhost:27017/prisma"
-    }, (err, db) => {
-        if (err) reject(err);
-        else {
-            resolve("success");
-        }
-    });
+async function main() {
+    await devis.call({ role: "mongodb", action: "connect" }, { url: "mongodb://localhost:27017/shop" });
+    await devis.call({ role: "mongodb", action: "insert" }, { collection: "books", type: "many", data: [{ title: "Dune" }, { title: "Hyperion" }], close: false });
+    const books = await devis.call({ role: "mongodb", action: "find" }, { collection: "books", query: {} });
+    console.log(books.map((book) => book.title)); // [ 'Dune', 'Hyperion' ]
+}
 
-});
-promise.then((res) => {
-
-	//call find function of the plugin by giving the collection and search conditions 
-	devisMongoClient.call({
-		role: "mongodb",
-		action: "find"
-	    }, {
-		collection: "foo",
-		query: {
-		    "Acronym": "L"
-		}
-	    }, (err, result) => {
-		if (err) {
-		    console.log(err);
-		} else {
-		    console.log(result);
-		}
-	});
-});
+main().catch((err) => console.error(err));
 ```
+
+With Devis 3, pass a callback as last argument instead: `devis.call(pattern, args, (err, result) => { ... })`.
 
 ## Closing connections
 
@@ -188,7 +164,7 @@ An unknown `type` is reported to the callback as an error.
 
 ## Upgrading from 1.x
 
-* Node.js 22 or later and Devis 3 are required. Devis is now a peer dependency.
+* Node.js 22 or later and Devis 3 or 4 are required. Devis is now a peer dependency.
 * The plugin uses the MongoDB driver 7. Results are the driver's own: for example `insert` returns `{ acknowledged, insertedId }` and `update` returns `{ matchedCount, modifiedCount }`.
 * `connect` URLs must include the database name, for example `mongodb://localhost:27017/foo`.
 * Fixed: `find`, `index`, `update` and `delete` closed the connection before the query answered; `delete` with `type: "many"` and `createCollection` always failed.
